@@ -1,0 +1,115 @@
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.claude
+
+# ─── Build outputs ───────────────────────────────────────────────────────────
+dist/
+build/
+out/
+.next/
+services/*/dist/
+packages/*/dist/
+frontend/dist/
+
+# ─── TypeScript ──────────────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.python-version
+*.egg-info/
+*.egg
+dist/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.hypothesis/
+
+# ─── Environment files ───────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+docker/.env
+!docker/.env.example
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.seed
+
+# ─── Coverage ────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+lcov.info
+*.lcov
+
+# ─── Turbo ───────────────────────────────────────────────────────────────────
+.turbo/
+.turbo-cache/
+
+# ─── Docker volumes (local data) ─────────────────────────────────────────────
+docker/volumes/
+docker/data/
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Editor ──────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+.vim/
+
+# ─── Test artifacts ──────────────────────────────────────────────────────────
+test-results/
+playwright-report/
+e2e/results/
+
+# ─── Temp ────────────────────────────────────────────────────────────────────
+tmp/
+temp/
+.temp/
+*.tmp
+*.bak
+*.cache
+
+# ─── Certificates ────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.p12
+!docker/keycloak/*.pem
