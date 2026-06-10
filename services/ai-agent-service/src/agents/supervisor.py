@@ -15,10 +15,9 @@ The supervisor:
 """
 import json
 import logging
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage
 from ..prompts.system_prompts import SUPERVISOR_PROMPT
 from ..config import settings
+from ..infrastructure.llm.provider import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +27,7 @@ VALID_AGENTS = {
     "database_agent",
     "rag_agent",
     "report_agent",
+    "admin_assistant",
     "FINISH",
 }
 
@@ -54,12 +54,7 @@ def supervisor_node(state: dict) -> dict:
             "supervisor_rounds": rounds,
         }
 
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        api_key=settings.openai_api_key,
-        max_tokens=200,
-        temperature=0,
-    )
+    llm = get_chat_model(max_tokens=200, temperature=0)
 
     already_called = list(agent_outputs.keys())
     context_summary = "\n".join(
@@ -88,9 +83,42 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
         next_agent = decision.get("next_agent", "FINISH")
         reasoning = decision.get("reasoning", "")
     except Exception as e:
-        logger.error(f"Supervisor JSON parse error: {e}")
+        error_message = str(e)
+        logger.error(f"Supervisor routing error: {error_message}")
         next_agent = "FINISH"
-        reasoning = "parse error"
+        reasoning = "provider error"
+
+        if "insufficient_quota" in error_message or "429" in error_message:
+            return {
+                **state,
+                "next_agent": "FINISH",
+                "final_answer": (
+                    "The AI provider rejected the request because the configured OpenAI API key "
+                    "has no available quota or billing is not active. Add credits or configure a "
+                    "different valid OPENAI_API_KEY, then restart the AI service."
+                ),
+                "metadata": {
+                    **state.get("metadata", {}),
+                    "ai_error": "openai_insufficient_quota",
+                },
+                "supervisor_rounds": rounds + 1,
+            }
+
+        if settings.ai_provider.lower() == "ollama":
+            return {
+                **state,
+                "next_agent": "FINISH",
+                "final_answer": (
+                    "Ollama is selected as the AI provider, but the AI service could not reach "
+                    "the local Ollama server or model. Make sure Ollama is installed, running, "
+                    f"and that the model '{settings.llm_model}' has been pulled."
+                ),
+                "metadata": {
+                    **state.get("metadata", {}),
+                    "ai_error": "ollama_unavailable",
+                },
+                "supervisor_rounds": rounds + 1,
+            }
 
     if next_agent not in VALID_AGENTS:
         next_agent = "FINISH"
@@ -111,7 +139,7 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
 
 def route_supervisor(state: dict) -> str:
     """Conditional edge function for the supervisor node."""
-    return state.get("next_agent", "FINISH")
+    return state.get("next_agent") or "FINISH"
 
 
 def _synthesize(query: str, agent_outputs: dict) -> str:
@@ -122,11 +150,7 @@ def _synthesize(query: str, agent_outputs: dict) -> str:
     if len(agent_outputs) == 1:
         return next(iter(agent_outputs.values()))
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        api_key=settings.openai_api_key,
-        max_tokens=settings.max_tokens,
-    )
+    llm = get_chat_model()
 
     sections = "\n\n".join(
         [f"### {name.replace('_', ' ').title()}\n{output}"

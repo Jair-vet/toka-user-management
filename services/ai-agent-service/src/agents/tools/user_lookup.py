@@ -1,6 +1,7 @@
 import httpx
 from langchain_core.tools import tool
 from ...config import settings
+from ..auth_context import auth_headers
 
 
 @tool
@@ -13,7 +14,11 @@ async def user_lookup(query: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             if "count" in query.lower() or "how many" in query.lower():
-                resp = await client.get(f"{settings.user_service_url}/users?limit=1")
+                resp = await client.get(
+                    f"{settings.user_service_url}/users?limit=1",
+                    headers=auth_headers(),
+                )
+                resp.raise_for_status()
                 data = resp.json()
                 total = data.get("meta", {}).get("total", 0)
                 return f"Total users: {total}"
@@ -21,7 +26,9 @@ async def user_lookup(query: str) -> str:
                 resp = await client.get(
                     f"{settings.user_service_url}/users",
                     params={"search": query, "limit": 5},
+                    headers=auth_headers(),
                 )
+                resp.raise_for_status()
                 data = resp.json()
                 users = data.get("data", [])
                 if not users:

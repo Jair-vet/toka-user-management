@@ -32,7 +32,12 @@ async def chat(
     user_id = current_user.get("sub", "anonymous")
 
     try:
-        result = await run_agent(request.message, session_id, user_id)
+        result = await run_agent(
+            request.message,
+            session_id,
+            user_id,
+            current_user.get("__access_token"),
+        )
         return ChatResponse(
             answer=result["answer"],
             session_id=session_id,
@@ -54,7 +59,12 @@ async def chat_stream(
 
     async def generate():
         try:
-            result = await run_agent(request.message, session_id, user_id)
+            result = await run_agent(
+                request.message,
+                session_id,
+                user_id,
+                current_user.get("__access_token"),
+            )
             answer = result["answer"]
 
             # Simulate streaming word by word

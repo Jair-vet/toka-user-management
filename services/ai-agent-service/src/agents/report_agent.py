@@ -1,10 +1,9 @@
 import logging
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
 from .tools.user_lookup import user_lookup
 from .tools.audit_search import audit_search
 from ..prompts.system_prompts import REPORT_AGENT_PROMPT
-from ..config import settings
+from ..infrastructure.llm.provider import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +31,7 @@ async def report_agent_node(state: dict) -> dict:
     context = "\n\n".join([f"[{r['tool']}]:\n{r['result']}" for r in tool_results])
 
     # Generate report with LLM
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        api_key=settings.openai_api_key,
-        max_tokens=settings.max_tokens,
-    )
+    llm = get_chat_model()
 
     messages = [
         {"role": "system", "content": REPORT_AGENT_PROMPT},
@@ -50,5 +45,9 @@ async def report_agent_node(state: dict) -> dict:
         **state,
         "messages": state["messages"] + [AIMessage(content=answer)],
         "tool_results": tool_results,
+        "agent_outputs": {
+            **state.get("agent_outputs", {}),
+            "report_agent": answer,
+        },
         "final_answer": answer,
     }

@@ -4,6 +4,7 @@ from .chunker import chunk_text
 from .embedder import embed_texts, embed_query
 from ..infrastructure.vector_store.qdrant_adapter import ensure_collection, upsert_vectors, search
 from ..config import settings
+from ..infrastructure.llm.provider import is_llm_configured
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,9 @@ async def ingest_document(
     if not chunks:
         return 0
 
-    if not settings.openai_api_key:
+    if not is_llm_configured():
         logger.warning(
-            "OPENAI_API_KEY is not configured; document chunked but not embedded/upserted"
+            "LLM provider is not configured; document chunked but not embedded/upserted"
         )
         return len(chunks)
 
@@ -48,7 +49,7 @@ async def ingest_document(
 
 async def retrieve_context(query: str, top_k: int = 5) -> List[dict]:
     """Retrieve relevant context for a query."""
-    if not settings.openai_api_key:
+    if not is_llm_configured():
         return []
     query_vector = await embed_query(query)
     results = await search(query_vector, top_k=top_k)

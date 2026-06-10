@@ -1,52 +1,58 @@
-"""Unit tests for LangGraph agent orchestrator."""
+"""Unit tests for the current LangGraph supervisor orchestrator."""
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 @pytest.mark.asyncio
-async def test_run_agent_returns_required_keys():
-    mock_result = {
-        "answer": "Here is the answer.",
-        "intent": "rag_query",
-        "latency_ms": 123,
-    }
-    with patch("src.agents.orchestrator.build_graph") as mock_build:
-        mock_graph = MagicMock()
-        mock_graph.ainvoke = AsyncMock(return_value={
-            "messages": [],
-            "answer": mock_result["answer"],
-            "intent": mock_result["intent"],
-            "latency_ms": mock_result["latency_ms"],
-        })
-        mock_build.return_value = mock_graph
-
+async def test_run_agent_returns_degraded_mode_when_llm_provider_missing():
+    with (
+        patch("src.agents.orchestrator.is_llm_configured", return_value=False),
+        patch("src.agents.orchestrator.track_metrics", new=AsyncMock()) as track_metrics,
+    ):
         from src.agents.orchestrator import run_agent
 
-        result = await run_agent("What is RAG?", "session-1", "user-1")
-        assert "answer" in result
-        assert "intent" in result
-        assert "latency_ms" in result
+        result = await run_agent("What is RAG?", "session-1", "user-1", "token-1")
+
+        assert result["intent"] == "degraded_no_llm_provider"
+        assert "LLM provider" in result["answer"]
+        track_metrics.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_classify_intent_rag():
-    """Intent classification returns known categories."""
-    from src.agents.orchestrator import classify_intent
-
-    state = {
+async def test_run_agent_sets_access_token_context_for_tools():
+    final_state = {
         "messages": [],
-        "question": "How does RAG work?",
-        "answer": "",
-        "intent": "",
-        "latency_ms": 0,
-        "session_id": "s1",
-        "user_id": "u1",
+        "final_answer": "Token-aware answer",
+        "agent_outputs": {"backend_agent": "Token-aware answer"},
+        "metadata": {},
     }
 
-    with patch("src.agents.orchestrator.ChatOpenAI") as mock_llm_cls:
-        mock_llm = MagicMock()
-        mock_llm.invoke = MagicMock(return_value=MagicMock(content="rag_query"))
-        mock_llm_cls.return_value = mock_llm
+    with (
+        patch("src.agents.orchestrator.is_llm_configured", return_value=True),
+        patch("src.agents.orchestrator.build_graph") as build_graph,
+        patch("src.agents.orchestrator.track_metrics", new=AsyncMock()),
+    ):
+        from src.agents.auth_context import auth_headers
 
-        result = classify_intent(state)
-        assert "intent" in result
+        async def invoke_with_context(_state: dict) -> dict:
+            assert auth_headers() == {"Authorization": "Bearer user-token"}
+            return final_state
+
+        graph = MagicMock()
+        graph.ainvoke = AsyncMock(side_effect=invoke_with_context)
+        build_graph.return_value = graph
+
+        import src.agents.orchestrator as orchestrator
+        orchestrator._graph = None
+
+        result = await orchestrator.run_agent(
+            "List users",
+            "session-1",
+            "user-1",
+            "user-token",
+        )
+
+        assert result["answer"] == "Token-aware answer"
+        assert result["intent"] == "backend_agent"
+        assert auth_headers() == {}

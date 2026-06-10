@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 
@@ -17,7 +17,9 @@ vi.mock('../store/authStore', () => ({
 }));
 
 describe('ProtectedRoute', () => {
-  it('redirects to /login when not authenticated', () => {
+  it('redirects to /login when not authenticated', async () => {
+    mockFetchMe.mockResolvedValueOnce(undefined);
+
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
         <Routes>
@@ -28,6 +30,9 @@ describe('ProtectedRoute', () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(screen.getByText('Login')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Login')).toBeInTheDocument();
+    });
   });
 });

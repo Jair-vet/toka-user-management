@@ -91,7 +91,18 @@ flowchart LR
 cp .env.example docker/.env
 # Opcional: editar docker/.env con tus valores.
 # Si no existe docker/.env, Compose usa los defaults definidos en docker-compose.yml.
-# OPENAI_API_KEY habilita RAG/LLM real; si queda vacío, AI Service arranca en modo demo degradado.
+# Para desarrollo gratuito local, usa Ollama:
+# AI_PROVIDER=ollama
+# OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+# LLM_MODEL=qwen2.5-coder:7b
+# EMBEDDING_MODEL=nomic-embed-text
+```
+
+Antes de usar el asistente IA con Ollama, instala Ollama y descarga los modelos:
+
+```bash
+ollama pull qwen2.5-coder:7b
+ollama pull nomic-embed-text
 ```
 
 ### 2. Construir y levantar toda la infraestructura

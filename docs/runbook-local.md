@@ -8,7 +8,31 @@ Levantar el stack Docker local del Toka User Management System y validar que los
 
 - Docker Desktop corriendo.
 - Node.js 20+ si vas a ejecutar builds/tests locales.
-- `OPENAI_API_KEY` es opcional. Sin esa variable, el servicio de IA arranca en modo degradado para pruebas locales.
+- Ollama instalado si usarás IA local gratuita.
+- `AI_PROVIDER=ollama` permite usar el asistente sin créditos de OpenAI.
+
+## IA local con Ollama
+
+Instala Ollama desde el sitio oficial y descarga los modelos:
+
+```bash
+ollama pull qwen2.5-coder:7b
+ollama pull nomic-embed-text
+ollama list
+```
+
+En `docker/.env`, deja estas variables:
+
+```bash
+AI_PROVIDER=ollama
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+LLM_MODEL=qwen2.5-coder:7b
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+QDRANT_COLLECTION=toka_documents_ollama
+```
 
 ## Primera ejecución o después de cambios en RabbitMQ/Keycloak
 
@@ -62,4 +86,3 @@ docker logs toka_role_service --tail 120
 docker logs toka_audit_service --tail 120
 docker logs toka_ai_service --tail 120
 ```
-

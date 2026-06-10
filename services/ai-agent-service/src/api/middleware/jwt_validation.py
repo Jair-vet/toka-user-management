@@ -60,6 +60,7 @@ async def get_current_user(
         if authorized_party not in allowed_clients and not any(aud in allowed_clients for aud in audiences):
             raise HTTPException(status_code=401, detail="Invalid token client")
 
+        payload["__access_token"] = token
         return payload
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")

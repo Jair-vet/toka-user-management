@@ -1,6 +1,7 @@
 import httpx
 from langchain_core.tools import tool
 from ...config import settings
+from ..auth_context import auth_headers
 
 
 @tool
@@ -19,7 +20,12 @@ async def audit_search(query: str) -> str:
             params["resource"] = query.split("resource=")[1].split()[0]
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{settings.audit_service_url}/audit/events", params=params)
+            resp = await client.get(
+                f"{settings.audit_service_url}/audit/events",
+                params=params,
+                headers=auth_headers(),
+            )
+            resp.raise_for_status()
             data = resp.json()
             events = data.get("data", [])
             if not events:

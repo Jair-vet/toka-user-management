@@ -1,10 +1,9 @@
 """Frontend Specialist Agent — React, Zustand, TanStack Query, design system."""
 import logging
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
 from .tools.vector_search import vector_search
 from ..prompts.system_prompts import FRONTEND_AGENT_PROMPT
-from ..config import settings
+from ..infrastructure.llm.provider import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +19,7 @@ async def frontend_agent_node(state: dict) -> dict:
     except Exception as e:
         logger.warning(f"vector_search failed in frontend_agent: {e}")
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        api_key=settings.openai_api_key,
-        max_tokens=settings.max_tokens,
-    )
+    llm = get_chat_model()
 
     messages = [
         {
