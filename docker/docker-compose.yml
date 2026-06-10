@@ -343,8 +343,15 @@ services:
       PORT: 8000
       MONGODB_URL: mongodb://${MONGO_USER:-toka_user}:${MONGO_PASS:-toka_secret_pass}@mongodb:27017/toka_ai?authSource=admin
       QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-toka_documents}
       RABBITMQ_URL: amqp://${RABBIT_USER:-toka_rabbit}:${RABBIT_PASS:-toka_rabbit_pass}@rabbitmq:5672
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
       USER_SERVICE_URL: http://user-service:3002
       ROLE_SERVICE_URL: http://role-service:3003
       AUDIT_SERVICE_URL: http://audit-service:3004

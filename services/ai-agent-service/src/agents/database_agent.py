@@ -1,11 +1,10 @@
 """Database Specialist Agent — PostgreSQL, MongoDB, Redis, Qdrant."""
 import logging
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
 from .tools.user_lookup import user_lookup
 from .tools.audit_search import audit_search
 from ..prompts.system_prompts import DATABASE_AGENT_PROMPT
-from ..config import settings
+from ..infrastructure.llm.provider import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +25,7 @@ async def database_agent_node(state: dict) -> dict:
 
     context = "\n".join(tool_results) if tool_results else ""
 
-    llm = ChatOpenAI(
-        model=settings.llm_model,
-        api_key=settings.openai_api_key,
-        max_tokens=settings.max_tokens,
-    )
+    llm = get_chat_model()
 
     messages = [
         {

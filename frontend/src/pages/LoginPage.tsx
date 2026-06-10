@@ -9,14 +9,17 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { fetchMe } = useAuthStore();
+  const { fetchMe, setToken } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await httpClient.post('/api/auth/login', { email, password });
+      const { data } = await httpClient.post<{ accessToken?: string }>('/api/auth/login', { email, password });
+      if (data.accessToken) {
+        setToken(data.accessToken);
+      }
       await fetchMe();
       navigate('/dashboard');
     } catch (err: unknown) {

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, Search, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import { usersApi, type User, type CreateUserDto, type UpdateUserDto } from '@/api/endpoints';
+import { usersApi, rolesApi, type User, type CreateUserDto, type UpdateUserDto } from '@/api/endpoints';
 import { toast } from '@/store/toastStore';
 import { SkeletonTable } from '@/components/Skeleton';
 
@@ -15,13 +15,15 @@ const statusBadge: Record<string, string> = {
 
 function UserModal({
   user,
+  currentRoleId,
   onClose,
   onSave,
   saving,
 }: {
   user?: User;
+  currentRoleId?: string;
   onClose: () => void;
-  onSave: (data: CreateUserDto | UpdateUserDto) => void;
+  onSave: (data: CreateUserDto | UpdateUserDto, roleId?: string) => void;
   saving?: boolean;
 }) {
   const [form, setForm] = useState({
@@ -29,7 +31,14 @@ function UserModal({
     firstName: user?.firstName ?? '',
     lastName: user?.lastName ?? '',
     status: user?.status ?? 'ACTIVE',
+    roleId: currentRoleId ?? '',
   });
+
+  const { data: rolesData } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => rolesApi.list(),
+  });
+  const roles = rolesData?.data ?? [];
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -50,12 +59,12 @@ function UserModal({
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {!user && (
-            <input className="input" placeholder="Email" type="email"
+            <input className="input" placeholder="Email" type="email" autoComplete="off"
               value={form.email} onChange={(e) => set('email', e.target.value)} />
           )}
-          <input className="input" placeholder="First name" value={form.firstName}
+          <input className="input" placeholder="First name" autoComplete="off" value={form.firstName}
             onChange={(e) => set('firstName', e.target.value)} />
-          <input className="input" placeholder="Last name" value={form.lastName}
+          <input className="input" placeholder="Last name" autoComplete="off" value={form.lastName}
             onChange={(e) => set('lastName', e.target.value)} />
           {user && (
             <select className="input" value={form.status}
@@ -66,6 +75,13 @@ function UserModal({
               <option value="PENDING">Pending</option>
             </select>
           )}
+          <select className="input" value={form.roleId}
+            onChange={(e) => set('roleId', e.target.value)}>
+            <option value="">{user ? 'No role' : 'No role (assign later)'}</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem', justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
@@ -76,6 +92,7 @@ function UserModal({
               user
                 ? { firstName: form.firstName, lastName: form.lastName, status: form.status as UpdateUserDto['status'] }
                 : { email: form.email, firstName: form.firstName, lastName: form.lastName },
+              form.roleId || undefined,
             )}
           >
             {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : (user ? 'Save' : 'Create')}
@@ -103,8 +120,31 @@ export function UsersPage() {
   const total = data?.data.meta.total ?? 0;
   const totalPages = data?.data.meta.totalPages ?? 1;
 
+  const roleQueries = useQueries({
+    queries: users.map((u) => ({
+      queryKey: ['user-roles', u.id],
+      queryFn: () => rolesApi.userRoles(u.id),
+      staleTime: 30_000,
+    })),
+  });
+  const userRoleMap: Record<string, { id: string; name: string; allIds: string[] } | undefined> = {};
+  users.forEach((u, i) => {
+    const assignments = roleQueries[i]?.data?.data;
+    userRoleMap[u.id] = assignments?.[0]
+      ? {
+          id: assignments[0].roleId,
+          name: assignments[0].roleName,
+          allIds: assignments.map((a) => a.roleId),
+        }
+      : undefined;
+  });
+
   const createMutation = useMutation({
-    mutationFn: (dto: CreateUserDto) => usersApi.create(dto),
+    mutationFn: async ({ dto, roleId }: { dto: CreateUserDto; roleId?: string }) => {
+      const res = await usersApi.create(dto);
+      if (roleId) await usersApi.assignRole(res.data.id, roleId);
+      return res;
+    },
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: ['users'] });
       setModal(null);
@@ -117,9 +157,23 @@ export function UsersPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, dto }: { id: string; dto: UpdateUserDto }) => usersApi.update(id, dto),
-    onSuccess: () => {
+    mutationFn: async ({ id, dto, roleId, prevRoleIds }: {
+      id: string; dto: UpdateUserDto; roleId?: string; prevRoleIds?: string[];
+    }) => {
+      const res = await usersApi.update(id, dto);
+      const prev = prevRoleIds ?? [];
+      // Revoke every role that is not the selected one (also cleans up duplicates)
+      for (const oldId of prev) {
+        if (oldId !== roleId) await rolesApi.revoke(id, oldId);
+      }
+      if (roleId && !prev.includes(roleId)) {
+        await usersApi.assignRole(id, roleId);
+      }
+      return res;
+    },
+    onSuccess: (_res, vars) => {
       void qc.invalidateQueries({ queryKey: ['users'] });
+      void qc.invalidateQueries({ queryKey: ['user-roles', vars.id] });
       setModal(null);
       toast.success('User updated successfully');
     },
@@ -141,11 +195,16 @@ export function UsersPage() {
     },
   });
 
-  const handleSave = (data: CreateUserDto | UpdateUserDto) => {
+  const handleSave = (data: CreateUserDto | UpdateUserDto, roleId?: string) => {
     if (modal === 'create') {
-      createMutation.mutate(data as CreateUserDto);
+      createMutation.mutate({ dto: data as CreateUserDto, roleId });
     } else if (modal && typeof modal === 'object') {
-      updateMutation.mutate({ id: modal.id, dto: data as UpdateUserDto });
+      updateMutation.mutate({
+        id: modal.id,
+        dto: data as UpdateUserDto,
+        roleId,
+        prevRoleIds: userRoleMap[modal.id]?.allIds,
+      });
     }
   };
 
@@ -166,7 +225,10 @@ export function UsersPage() {
           <input
             className="input"
             style={{ paddingLeft: 32 }}
+            type="search"
+            name="users-table-filter"
             placeholder="Search by name or email..."
+            autoComplete="one-time-code"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
@@ -175,7 +237,7 @@ export function UsersPage() {
 
       <div className="card">
         {isLoading ? (
-          <SkeletonTable rows={6} cols={5} />
+          <SkeletonTable rows={6} cols={6} />
         ) : users.length === 0 ? (
           <p className="text-muted text-sm" style={{ padding: '1rem 0' }}>No users found.</p>
         ) : (
@@ -187,6 +249,7 @@ export function UsersPage() {
                     <th>Name</th>
                     <th>Email</th>
                     <th>Status</th>
+                    <th>Role</th>
                     <th>Created</th>
                     <th>Actions</th>
                   </tr>
@@ -200,6 +263,11 @@ export function UsersPage() {
                         <span className={`badge ${statusBadge[u.status] ?? 'badge-gray'}`}>
                           {u.status}
                         </span>
+                      </td>
+                      <td>
+                        {userRoleMap[u.id]
+                          ? <span className="badge badge-blue">{userRoleMap[u.id]!.name}</span>
+                          : <span className="text-muted text-sm">—</span>}
                       </td>
                       <td className="text-sm text-muted">
                         {new Date(u.createdAt).toLocaleDateString()}
@@ -255,6 +323,7 @@ export function UsersPage() {
       {modal && (
         <UserModal
           user={modal !== 'create' ? modal : undefined}
+          currentRoleId={modal !== 'create' ? userRoleMap[modal.id]?.id : undefined}
           onClose={() => setModal(null)}
           onSave={handleSave}
           saving={isSaving}

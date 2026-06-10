@@ -1,7 +1,6 @@
-import time
 from typing import List
 from langchain_openai import OpenAIEmbeddings
-from ..config import settings
+from ..infrastructure.llm.provider import get_embeddings_model
 
 
 _embedder: OpenAIEmbeddings | None = None
@@ -10,10 +9,7 @@ _embedder: OpenAIEmbeddings | None = None
 def get_embedder() -> OpenAIEmbeddings:
     global _embedder
     if _embedder is None:
-        _embedder = OpenAIEmbeddings(
-            model=settings.embedding_model,
-            api_key=settings.openai_api_key,
-        )
+        _embedder = get_embeddings_model()
     return _embedder
 
 

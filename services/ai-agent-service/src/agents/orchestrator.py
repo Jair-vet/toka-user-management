@@ -31,6 +31,8 @@ from .backend_agent import backend_agent_node
 from .database_agent import database_agent_node
 from ..config import settings
 from ..evaluation.metrics import track_metrics
+from .auth_context import reset_access_token, set_access_token
+from ..infrastructure.llm.provider import is_llm_configured
 
 logger = logging.getLogger(__name__)
 
@@ -101,66 +103,78 @@ def get_graph():
     return _graph
 
 
-async def run_agent(message: str, session_id: str, user_id: str) -> dict:
+async def run_agent(
+    message: str,
+    session_id: str,
+    user_id: str,
+    access_token: str | None = None,
+) -> dict:
     """Run the full multi-agent pipeline and return response + metrics."""
     start_time = time.time()
+    access_token_ctx = set_access_token(access_token)
 
-    if not settings.openai_api_key:
+    try:
+        if not is_llm_configured():
+            latency_ms = int((time.time() - start_time) * 1000)
+            answer = (
+                "AI service is running in degraded local mode because no LLM provider is configured. "
+                "Set AI_PROVIDER=ollama with OLLAMA_BASE_URL, or configure OPENAI_API_KEY, then restart the AI service."
+            )
+            await track_metrics(
+                user_id=user_id,
+                session_id=session_id,
+                intent="degraded_no_llm_provider",
+                latency_ms=latency_ms,
+                metadata={"degraded": True, "reason": "missing_llm_provider"},
+            )
+            return {
+                "answer": answer,
+                "intent": "degraded_no_llm_provider",
+                "latency_ms": latency_ms,
+            }
+
+        graph = get_graph()
+
+        initial_state: AgentState = {
+            "messages": [HumanMessage(content=message)],
+            "intent": "",
+            "context": [],
+            "tool_results": [],
+            "final_answer": "",
+            "metadata": {"user_id": user_id, "session_id": session_id},
+            "next_agent": "",
+            "agent_outputs": {},
+            "supervisor_rounds": 0,
+            "supervisor_max_rounds": settings.supervisor_max_rounds,
+        }
+
+        result = await graph.ainvoke(initial_state)
+
         latency_ms = int((time.time() - start_time) * 1000)
-        answer = (
-            "AI service is running in degraded local mode because OPENAI_API_KEY is not configured. "
-            "Set OPENAI_API_KEY in docker/.env to enable LangGraph, RAG, embeddings, and tool reasoning."
-        )
+        final_answer = result.get("final_answer", "")
+
+        # Derive intent from which agents were called
+        agent_outputs: dict = result.get("agent_outputs", {})
+        metadata: dict = result.get("metadata", {})
+        if metadata.get("ai_error"):
+            intent = metadata["ai_error"]
+        elif agent_outputs:
+            intent = "+".join(agent_outputs.keys())
+        else:
+            intent = "unknown"
+
         await track_metrics(
             user_id=user_id,
             session_id=session_id,
-            intent="degraded_no_openai_key",
+            intent=intent,
             latency_ms=latency_ms,
-            metadata={"degraded": True, "reason": "missing_openai_api_key"},
+            metadata=metadata,
         )
+
         return {
-            "answer": answer,
-            "intent": "degraded_no_openai_key",
+            "answer": final_answer,
+            "intent": intent,
             "latency_ms": latency_ms,
         }
-
-    graph = get_graph()
-
-    initial_state: AgentState = {
-        "messages": [HumanMessage(content=message)],
-        "intent": "",
-        "context": [],
-        "tool_results": [],
-        "final_answer": "",
-        "metadata": {"user_id": user_id, "session_id": session_id},
-        "next_agent": "",
-        "agent_outputs": {},
-        "supervisor_rounds": 0,
-        "supervisor_max_rounds": settings.supervisor_max_rounds,
-    }
-
-    result = await graph.ainvoke(initial_state)
-
-    latency_ms = int((time.time() - start_time) * 1000)
-    final_answer = result.get("final_answer", "")
-
-    # Derive intent from which agents were called
-    agent_outputs: dict = result.get("agent_outputs", {})
-    if agent_outputs:
-        intent = "+".join(agent_outputs.keys())
-    else:
-        intent = "unknown"
-
-    await track_metrics(
-        user_id=user_id,
-        session_id=session_id,
-        intent=intent,
-        latency_ms=latency_ms,
-        metadata=result.get("metadata", {}),
-    )
-
-    return {
-        "answer": final_answer,
-        "intent": intent,
-        "latency_ms": latency_ms,
-    }
+    finally:
+        reset_access_token(access_token_ctx)

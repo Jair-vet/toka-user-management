@@ -71,10 +71,10 @@ async def test_supervisor_calls_llm_for_routing():
     mock_response = MagicMock()
     mock_response.content = '{"next_agent": "rag_agent", "reasoning": "docs question"}'
 
-    with patch("src.agents.supervisor.ChatOpenAI") as MockLLM:
+    with patch("src.agents.supervisor.get_chat_model") as get_chat_model:
         mock_llm = MagicMock()
         mock_llm.invoke = MagicMock(return_value=mock_response)
-        MockLLM.return_value = mock_llm
+        get_chat_model.return_value = mock_llm
 
         state = _make_state(supervisor_rounds=0, agent_outputs={})
         result = supervisor_node(state)

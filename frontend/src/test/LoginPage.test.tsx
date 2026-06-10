@@ -15,6 +15,7 @@ vi.mock('../api/httpClient', () => ({
 vi.mock('../store/authStore', () => ({
   useAuthStore: () => ({
     fetchMe: vi.fn().mockResolvedValue(undefined),
+    setToken: vi.fn(),
   }),
 }));
 
@@ -58,7 +59,7 @@ describe('LoginPage', () => {
 
   it('navigates to dashboard on success', async () => {
     const mockPost = vi.mocked(httpClient.post);
-    mockPost.mockResolvedValueOnce({ data: {} });
+    mockPost.mockResolvedValueOnce({ data: { accessToken: 'access-token' } });
 
     render(<MemoryRouter><LoginPage /></MemoryRouter>);
 

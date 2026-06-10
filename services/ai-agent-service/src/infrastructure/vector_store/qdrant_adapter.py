@@ -31,7 +31,10 @@ async def ensure_collection() -> None:
     if settings.qdrant_collection not in existing:
         await client.create_collection(
             collection_name=settings.qdrant_collection,
-            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+            vectors_config=VectorParams(
+                size=settings.embedding_dimensions,
+                distance=Distance.COSINE,
+            ),
         )
 
 
