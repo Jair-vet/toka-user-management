@@ -1,0 +1,189 @@
+{
+  "vhosts": [
+    { "name": "/" }
+  ],
+  "users": [
+    {
+      "name": "toka_rabbit",
+      "password_hash": "RKrzgARXjV409IasTgaKPdIGEym1d0+/cYMZeZJ2AH2i/GOl",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "toka_rabbit",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "user.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "auth.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "role.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "toka.dlx",
+      "vhost": "/",
+      "type": "fanout",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "audit.user.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "toka.dlx",
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "audit.auth.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "toka.dlx",
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "audit.role.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "toka.dlx",
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "ai.user.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "toka.dlx",
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "user.role-cache.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "toka.dlx"
+      }
+    },
+    {
+      "name": "role.user-deleted.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "toka.dlx"
+      }
+    },
+    {
+      "name": "dlq.events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "user.events",
+      "vhost": "/",
+      "destination": "audit.user.queue",
+      "destination_type": "queue",
+      "routing_key": "user.#",
+      "arguments": {}
+    },
+    {
+      "source": "auth.events",
+      "vhost": "/",
+      "destination": "audit.auth.queue",
+      "destination_type": "queue",
+      "routing_key": "auth.#",
+      "arguments": {}
+    },
+    {
+      "source": "role.events",
+      "vhost": "/",
+      "destination": "audit.role.queue",
+      "destination_type": "queue",
+      "routing_key": "role.#",
+      "arguments": {}
+    },
+    {
+      "source": "user.events",
+      "vhost": "/",
+      "destination": "ai.user.queue",
+      "destination_type": "queue",
+      "routing_key": "user.created",
+      "arguments": {}
+    },
+    {
+      "source": "role.events",
+      "vhost": "/",
+      "destination": "user.role-cache.queue",
+      "destination_type": "queue",
+      "routing_key": "role.assigned",
+      "arguments": {}
+    },
+    {
+      "source": "role.events",
+      "vhost": "/",
+      "destination": "user.role-cache.queue",
+      "destination_type": "queue",
+      "routing_key": "role.revoked",
+      "arguments": {}
+    },
+    {
+      "source": "user.events",
+      "vhost": "/",
+      "destination": "role.user-deleted.queue",
+      "destination_type": "queue",
+      "routing_key": "user.deleted",
+      "arguments": {}
+    },
+    {
+      "source": "toka.dlx",
+      "vhost": "/",
+      "destination": "dlq.events",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    }
+  ]
+}
