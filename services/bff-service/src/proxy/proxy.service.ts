@@ -35,6 +35,11 @@ export class ProxyService {
           timeout: 10000,
           errorThresholdPercentage: 50,
           resetTimeout: 30000,
+          // 4xx = client error (expired token, validation) — the service is healthy.
+          // Only 5xx and network errors should open the breaker.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          errorFilter: (err: any) =>
+            err?.response?.status >= 400 && err?.response?.status < 500,
         },
       );
       breaker.on('open', () =>
@@ -80,6 +85,11 @@ export class ProxyService {
     try {
       return await breaker.fire(reqConfig) as AxiosResponse<T>;
     } catch (err: unknown) {
+      // Forward downstream HTTP errors (4xx/5xx) with their real status and body
+      // instead of letting Nest convert them into a generic 500.
+      if (axios.isAxiosError(err) && err.response) {
+        return err.response as AxiosResponse<T>;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Breaker is open')) {
         throw new ServiceUnavailableException(

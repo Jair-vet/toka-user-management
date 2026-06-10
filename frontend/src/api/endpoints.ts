@@ -60,6 +60,13 @@ export interface Permission {
   action: string;
 }
 
+export interface UserRoleAssignment {
+  userId: string;
+  roleId: string;
+  roleName: string;
+  assignedAt: string;
+}
+
 export interface CreateRoleDto {
   name: string;
   description: string;
@@ -75,7 +82,7 @@ export const rolesApi = {
   delete: (id: string) => httpClient.delete(`/api/roles/${id}`),
   permissions: () => httpClient.get<Permission[]>('/api/roles/permissions'),
   userRoles: (userId: string) =>
-    httpClient.get<Role[]>(`/api/roles/users/${userId}`),
+    httpClient.get<UserRoleAssignment[]>(`/api/roles/users/${userId}`),
   revoke: (userId: string, roleId: string) =>
     httpClient.delete(`/api/roles/${roleId}/users/${userId}`),
 };
