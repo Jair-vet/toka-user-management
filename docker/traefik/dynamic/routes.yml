@@ -1,0 +1,30 @@
+http:
+  routers:
+    # BFF handles all API and auth routes (priority 10 > frontend priority 1)
+    bff-api:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/api`) || PathPrefix(`/auth`)"
+      service: bff-svc
+      priority: 10
+
+    # Frontend SPA (catch-all, lowest priority)
+    frontend-spa:
+      entryPoints:
+        - web
+      rule: "PathPrefix(`/`)"
+      service: frontend-svc
+      priority: 1
+
+  services:
+    bff-svc:
+      loadBalancer:
+        servers:
+          - url: "http://bff-service:3005"
+        passHostHeader: true
+
+    frontend-svc:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:80"
+        passHostHeader: true

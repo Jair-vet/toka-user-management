@@ -1,0 +1,30 @@
+http:
+  middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "X-Correlation-Id"
+        accessControlAllowOriginList:
+          - "http://localhost"
+          - "http://localhost:5173"
+        accessControlMaxAge: 3600
+        addVaryHeader: true
+
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+
+    strip-api-prefix:
+      stripPrefix:
+        prefixes:
+          - "/api"

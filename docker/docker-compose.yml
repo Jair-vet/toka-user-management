@@ -1,0 +1,434 @@
+networks:
+  frontend:
+    name: toka_frontend
+  backend:
+    name: toka_backend
+  data:
+    name: toka_data
+  ai:
+    name: toka_ai
+
+volumes:
+  pg_data:
+  mongo_data:
+  redis_data:
+  rabbit_data:
+  qdrant_data:
+  keycloak_data:
+
+services:
+  # ===========================
+  # INFRASTRUCTURE
+  # ===========================
+
+  traefik:
+    image: traefik:v3.0
+    container_name: toka_traefik
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "8090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/dynamic:/dynamic:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: toka_keycloak
+    networks:
+      - backend
+      - data
+    ports:
+      - "8080:8080"
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${KC_DB_USER:-keycloak_user}
+      KC_DB_PASSWORD: ${KC_DB_PASS:-keycloak_secret_pass}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASS:-admin_secret_pass}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    command: start-dev --import-realm
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
+      - keycloak_data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && timeout 5 cat <&3 | grep -q '200 OK'"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: toka_postgres
+    networks:
+      - data
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${PG_USER:-toka_user}
+      POSTGRES_PASSWORD: ${PG_PASS:-toka_secret_pass}
+      POSTGRES_DB: toka_main
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-toka_user} -d toka_main"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    container_name: toka_mongodb
+    networks:
+      - data
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-toka_user}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:-toka_secret_pass}
+      MONGO_INITDB_DATABASE: toka_audit
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: toka_redis
+    networks:
+      - data
+      - backend
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-toka_redis_pass}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-toka_redis_pass}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: toka_rabbitmq
+    networks:
+      - backend
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-toka_rabbit}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASS:-toka_rabbit_pass}
+    volumes:
+      - rabbit_data:/var/lib/rabbitmq
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.3
+    container_name: toka_qdrant
+    networks:
+      - ai
+      - data
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===========================
+  # APPLICATION SERVICES
+  # ===========================
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
+    container_name: toka_auth_service
+    networks:
+      - backend
+      - data
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${PG_USER:-toka_user}:${PG_PASS:-toka_secret_pass}@postgres:5432/toka_main
+      REDIS_URL: redis://:${REDIS_PASSWORD:-toka_redis_pass}@redis:6379
+      RABBITMQ_URL: amqp://${RABBIT_USER:-toka_rabbit}:${RABBIT_PASS:-toka_rabbit_pass}@rabbitmq:5672
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: toka
+      KEYCLOAK_CLIENT_ID: backend-services
+      KEYCLOAK_CLIENT_SECRET: ${KC_CLIENT_SECRET:-backend-client-secret}
+      KC_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KC_ADMIN_PASS: ${KC_ADMIN_PASS:-admin_secret_pass}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/auth/health | grep -q 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=false"
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: services/user-service/Dockerfile
+    container_name: toka_user_service
+    networks:
+      - backend
+      - data
+    ports:
+      - "3002:3002"
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      DATABASE_URL: postgresql://${PG_USER:-toka_user}:${PG_PASS:-toka_secret_pass}@postgres:5432/toka_main
+      REDIS_URL: redis://:${REDIS_PASSWORD:-toka_redis_pass}@redis:6379
+      RABBITMQ_URL: amqp://${RABBIT_USER:-toka_rabbit}:${RABBIT_PASS:-toka_rabbit_pass}@rabbitmq:5672
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: toka
+      KEYCLOAK_CLIENT_ID: backend-services
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/users/health | grep -q 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=false"
+    restart: unless-stopped
+
+  role-service:
+    build:
+      context: ..
+      dockerfile: services/role-service/Dockerfile
+    container_name: toka_role_service
+    networks:
+      - backend
+      - data
+    ports:
+      - "3003:3003"
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      DATABASE_URL: postgresql://${PG_USER:-toka_user}:${PG_PASS:-toka_secret_pass}@postgres:5432/toka_main
+      REDIS_URL: redis://:${REDIS_PASSWORD:-toka_redis_pass}@redis:6379
+      RABBITMQ_URL: amqp://${RABBIT_USER:-toka_rabbit}:${RABBIT_PASS:-toka_rabbit_pass}@rabbitmq:5672
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: toka
+      KEYCLOAK_CLIENT_ID: backend-services
+      KEYCLOAK_CLIENT_SECRET: ${KC_CLIENT_SECRET:-backend-client-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/roles/health | grep -q 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=false"
+    restart: unless-stopped
+
+  audit-service:
+    build:
+      context: ..
+      dockerfile: services/audit-service/Dockerfile
+    container_name: toka_audit_service
+    networks:
+      - backend
+      - data
+    ports:
+      - "3004:3004"
+    environment:
+      NODE_ENV: production
+      PORT: 3004
+      MONGODB_URL: mongodb://${MONGO_USER:-toka_user}:${MONGO_PASS:-toka_secret_pass}@mongodb:27017/toka_audit?authSource=admin
+      REDIS_URL: redis://:${REDIS_PASSWORD:-toka_redis_pass}@redis:6379
+      RABBITMQ_URL: amqp://${RABBIT_USER:-toka_rabbit}:${RABBIT_PASS:-toka_rabbit_pass}@rabbitmq:5672
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: toka
+      KEYCLOAK_CLIENT_ID: backend-services
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/audit/health | grep -q 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - "traefik.enable=false"
+    restart: unless-stopped
+
+  ai-agent-service:
+    build:
+      context: ../services/ai-agent-service
+      dockerfile: Dockerfile
+    container_name: toka_ai_service
+    networks:
+      - ai
+      - backend
+      - data
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: 8000
+      MONGODB_URL: mongodb://${MONGO_USER:-toka_user}:${MONGO_PASS:-toka_secret_pass}@mongodb:27017/toka_ai?authSource=admin
+      QDRANT_URL: http://qdrant:6333
+      RABBITMQ_URL: amqp://${RABBIT_USER:-toka_rabbit}:${RABBIT_PASS:-toka_rabbit_pass}@rabbitmq:5672
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      USER_SERVICE_URL: http://user-service:3002
+      ROLE_SERVICE_URL: http://role-service:3003
+      AUDIT_SERVICE_URL: http://audit-service:3004
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: toka
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=false"
+    restart: unless-stopped
+
+  bff-service:
+    build:
+      context: ../services/bff-service
+      dockerfile: Dockerfile
+    container_name: toka_bff_service
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "3005:3005"
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      AUTH_SERVICE_URL: http://auth-service:3001
+      USER_SERVICE_URL: http://user-service:3002
+      ROLE_SERVICE_URL: http://role-service:3003
+      AUDIT_SERVICE_URL: http://audit-service:3004
+      AI_SERVICE_URL: http://ai-agent-service:8000
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: toka
+      KEYCLOAK_CLIENT_ID: toka-frontend
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
+      KEYCLOAK_REDIRECT_URI: http://localhost/auth/callback
+      SESSION_SECRET: ${SESSION_SECRET:-session_secret_change_me}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-toka_redis_pass}@redis:6379
+      FRONTEND_URL: http://localhost
+      CORS_ORIGINS: http://localhost
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      role-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health | grep -q 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bff.rule=PathPrefix(`/api`) || PathPrefix(`/auth`)"
+      - "traefik.http.routers.bff.entrypoints=web"
+      - "traefik.http.routers.bff.priority=10"
+      - "traefik.http.services.bff.loadbalancer.server.port=3005"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: toka_frontend
+    networks:
+      - frontend
+    depends_on:
+      bff-service:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+    restart: unless-stopped
