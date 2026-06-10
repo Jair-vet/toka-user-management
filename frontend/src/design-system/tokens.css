@@ -1,0 +1,164 @@
+/* ─── Design Tokens ──────────────────────────────────────────────────────────
+   Single source of truth. All components consume these variables.
+   Dark theme default; light theme via [data-theme="light"].
+─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Color palette ─────────────────────────────────────────────────────── */
+  --color-primary-50:  #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+  --color-sky-600: #0284c7;
+
+  --color-green-400: #4ade80;
+  --color-green-500: #22c55e;
+  --color-green-700: #15803d;
+
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+  --color-amber-700: #b45309;
+
+  --color-red-400:  #f87171;
+  --color-red-500:  #ef4444;
+  --color-red-700:  #b91c1c;
+
+  --color-slate-50:  #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+
+  /* ── Semantic colors (dark theme) ──────────────────────────────────────── */
+  --bg:              var(--color-slate-900);
+  --bg-surface:      var(--color-slate-800);
+  --bg-card:         #273344;
+  --bg-elevated:     #2d3a4e;
+  --bg-overlay:      rgba(0, 0, 0, 0.6);
+
+  --border:          var(--color-slate-700);
+  --border-focus:    var(--color-primary-500);
+  --border-error:    var(--color-red-500);
+
+  --text:            var(--color-slate-100);
+  --text-secondary:  var(--color-slate-300);
+  --text-muted:      var(--color-slate-400);
+  --text-disabled:   var(--color-slate-600);
+  --text-inverse:    var(--color-slate-900);
+
+  --primary:         var(--color-primary-500);
+  --primary-hover:   var(--color-primary-600);
+  --primary-light:   rgba(99, 102, 241, 0.15);
+
+  --success:         var(--color-green-500);
+  --success-bg:      rgba(34, 197, 94, 0.12);
+  --warning:         var(--color-amber-500);
+  --warning-bg:      rgba(245, 158, 11, 0.12);
+  --error:           var(--color-red-500);
+  --error-bg:        rgba(239, 68, 68, 0.12);
+  --info:            var(--color-sky-500);
+  --info-bg:         rgba(14, 165, 233, 0.12);
+
+  /* ── Spacing scale (4px base) ──────────────────────────────────────────── */
+  --space-1:  0.25rem;  /*  4px */
+  --space-2:  0.5rem;   /*  8px */
+  --space-3:  0.75rem;  /* 12px */
+  --space-4:  1rem;     /* 16px */
+  --space-5:  1.25rem;  /* 20px */
+  --space-6:  1.5rem;   /* 24px */
+  --space-8:  2rem;     /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --text-xs:   0.75rem;    /* 12px */
+  --text-sm:   0.875rem;   /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg:   1.125rem;   /* 18px */
+  --text-xl:   1.25rem;    /* 20px */
+  --text-2xl:  1.5rem;     /* 24px */
+  --text-3xl:  1.875rem;   /* 30px */
+
+  --font-normal:   400;
+  --font-medium:   500;
+  --font-semibold: 600;
+  --font-bold:     700;
+
+  --leading-tight:  1.25;
+  --leading-normal: 1.5;
+  --leading-loose:  1.75;
+
+  /* ── Border radius ─────────────────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius:      8px;
+  --radius-md:   10px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ────────────────────────────────────────────────────────────── */
+  --shadow-sm:  0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow:     0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+  --shadow-md:  0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+  --shadow-lg:  0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+  --shadow-xl:  0 25px 50px -12px rgb(0 0 0 / 0.5);
+
+  /* ── Z-index scale ──────────────────────────────────────────────────────── */
+  --z-base:    0;
+  --z-raised:  10;
+  --z-dropdown: 100;
+  --z-sticky:   200;
+  --z-overlay:  300;
+  --z-modal:    400;
+  --z-toast:    500;
+  --z-tooltip:  600;
+
+  /* ── Transitions ────────────────────────────────────────────────────────── */
+  --transition-fast:   all 0.1s ease;
+  --transition:        all 0.15s ease;
+  --transition-slow:   all 0.25s ease;
+
+  /* ── Component sizing ───────────────────────────────────────────────────── */
+  --btn-height-sm: 28px;
+  --btn-height-md: 36px;
+  --btn-height-lg: 44px;
+
+  --input-height-sm: 28px;
+  --input-height-md: 36px;
+  --input-height-lg: 44px;
+
+  --sidebar-width: 220px;
+  --topbar-height: 56px;
+}
+
+/* ── Light theme override ─────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:         var(--color-slate-50);
+  --bg-surface: #ffffff;
+  --bg-card:    #ffffff;
+  --bg-elevated: var(--color-slate-100);
+  --border:     var(--color-slate-200);
+  --text:       var(--color-slate-900);
+  --text-secondary: var(--color-slate-700);
+  --text-muted: var(--color-slate-500);
+  --text-disabled: var(--color-slate-300);
+}
