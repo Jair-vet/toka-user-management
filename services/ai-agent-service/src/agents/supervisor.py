@@ -15,9 +15,13 @@ The supervisor:
 """
 import json
 import logging
+import re
+import unicodedata
 from ..prompts.system_prompts import SUPERVISOR_PROMPT
 from ..config import settings
 from ..infrastructure.llm.provider import get_chat_model
+from ..infrastructure.observability import traced_observation
+from .trace_state import append_error
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,43 @@ def supervisor_node(state: dict) -> dict:
     agent_outputs: dict = state.get("agent_outputs", {})
     rounds: int = state.get("supervisor_rounds", 0)
     max_rounds: int = state.get("supervisor_max_rounds", settings.supervisor_max_rounds)
+    trace_id: str | None = state.get("trace_id")
+
+    if agent_outputs:
+        synthesis = _synthesize(query, agent_outputs)
+        logger.info("Supervisor: agent output exists, finishing")
+        return {
+            **state,
+            "next_agent": "FINISH",
+            "final_answer": synthesis,
+            "supervisor_rounds": rounds,
+            "routing_decisions": [
+                *state.get("routing_decisions", []),
+                {
+                    "round": rounds,
+                    "next_agent": "FINISH",
+                    "reasoning": "agent_output_available",
+                },
+            ],
+        }
+
+    deterministic_agent = _route_without_llm(query)
+    if deterministic_agent:
+        logger.info("Supervisor deterministic route: next=%s", deterministic_agent)
+        return {
+            **state,
+            "next_agent": deterministic_agent,
+            "final_answer": "",
+            "supervisor_rounds": rounds + 1,
+            "routing_decisions": [
+                *state.get("routing_decisions", []),
+                {
+                    "round": rounds + 1,
+                    "next_agent": deterministic_agent,
+                    "reasoning": "deterministic_intent_rule",
+                },
+            ],
+        }
 
     # If max rounds hit, force finish
     if rounds >= max_rounds and agent_outputs:
@@ -52,6 +93,14 @@ def supervisor_node(state: dict) -> dict:
             "next_agent": "FINISH",
             "final_answer": synthesis,
             "supervisor_rounds": rounds,
+            "routing_decisions": [
+                *state.get("routing_decisions", []),
+                {
+                    "round": rounds,
+                    "next_agent": "FINISH",
+                    "reasoning": "max_rounds_reached",
+                },
+            ],
         }
 
     llm = get_chat_model(max_tokens=200, temperature=0)
@@ -74,7 +123,13 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
 {{"next_agent": "<agent_name or FINISH>", "reasoning": "<brief reason>"}}"""
 
     try:
-        response = llm.invoke([{"role": "user", "content": prompt}])
+        with traced_observation(
+            trace_id=trace_id,
+            name="supervisor.routing",
+            input_data={"query": query, "round": rounds + 1, "agent_outputs": list(agent_outputs.keys())},
+            metadata={"round": rounds + 1},
+        ):
+            response = llm.invoke([{"role": "user", "content": prompt}])
         raw = response.content.strip()
         # Strip markdown fences if present
         if raw.startswith("```"):
@@ -87,6 +142,7 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
         logger.error(f"Supervisor routing error: {error_message}")
         next_agent = "FINISH"
         reasoning = "provider error"
+        error_type = _classify_provider_error(error_message)
 
         if "insufficient_quota" in error_message or "429" in error_message:
             return {
@@ -100,7 +156,14 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
                 "metadata": {
                     **state.get("metadata", {}),
                     "ai_error": "openai_insufficient_quota",
+                    "error_type": error_type,
                 },
+                "errors": append_error(
+                    state,
+                    agent_name="supervisor",
+                    error_type=error_type,
+                    message=error_message,
+                ),
                 "supervisor_rounds": rounds + 1,
             }
 
@@ -116,12 +179,30 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
                 "metadata": {
                     **state.get("metadata", {}),
                     "ai_error": "ollama_unavailable",
+                    "error_type": error_type,
                 },
+                "errors": append_error(
+                    state,
+                    agent_name="supervisor",
+                    error_type=error_type,
+                    message=error_message,
+                ),
                 "supervisor_rounds": rounds + 1,
             }
 
     if next_agent not in VALID_AGENTS:
         next_agent = "FINISH"
+
+    # A local model may occasionally choose FINISH for greetings/help requests
+    # before any worker has produced an answer. Route those to the read-only
+    # admin assistant so the chat returns useful capabilities instead of an
+    # empty synthesis.
+    if next_agent == "FINISH" and not agent_outputs:
+        next_agent = "admin_assistant"
+        reasoning = (
+            reasoning
+            or "No agent output exists yet; route general/help request to admin assistant."
+        )
 
     logger.info(f"Supervisor round {rounds+1}: next={next_agent} | {reasoning}")
 
@@ -134,6 +215,14 @@ Decide the next step. Respond ONLY with valid JSON, no markdown:
         "next_agent": next_agent,
         "final_answer": final_answer,
         "supervisor_rounds": rounds + 1,
+        "routing_decisions": [
+            *state.get("routing_decisions", []),
+            {
+                "round": rounds + 1,
+                "next_agent": next_agent,
+                "reasoning": reasoning,
+            },
+        ],
     }
 
 
@@ -176,3 +265,109 @@ Provide a single, coherent, comprehensive answer that:
     except Exception as e:
         logger.error(f"Synthesis error: {e}")
         return "\n\n".join(agent_outputs.values())
+
+
+def _classify_provider_error(error_message: str) -> str:
+    lowered = error_message.lower()
+    if "insufficient_quota" in lowered or "quota" in lowered:
+        return "quota"
+    if "429" in lowered or "rate limit" in lowered or "ratelimit" in lowered:
+        return "rate_limit"
+    if "timeout" in lowered or "timed out" in lowered:
+        return "timeout"
+    if "connection" in lowered or "connect" in lowered or "unavailable" in lowered:
+        return "provider_unavailable"
+    return "provider_error"
+
+
+def _route_without_llm(query: str) -> str | None:
+    normalized = _normalize(query)
+
+    help_patterns = (
+        "hola",
+        "hello",
+        "ayuda",
+        "help",
+        "que puedes hacer",
+        "que puedo hacer",
+        "como me ayudas",
+        "que herramientas",
+    )
+    if any(pattern in normalized for pattern in help_patterns):
+        return "admin_assistant"
+
+    report_patterns = (
+        "reporte",
+        "report",
+        "resumen",
+        "dashboard",
+        "metricas",
+        "auditoria",
+        "eventos",
+        "actividad",
+    )
+    if any(pattern in normalized for pattern in report_patterns):
+        return "report_agent"
+
+    database_patterns = (
+        "base de datos",
+        "database",
+        "postgres",
+        "mongodb",
+        "redis",
+        "qdrant",
+        "tabla",
+        "schema",
+        "usuarios hay",
+        "cuantos usuarios",
+    )
+    if any(pattern in normalized for pattern in database_patterns):
+        return "database_agent"
+
+    frontend_patterns = (
+        "frontend",
+        "react",
+        "pantalla",
+        "interfaz",
+        "ui",
+        "vite",
+        "zustand",
+    )
+    if any(pattern in normalized for pattern in frontend_patterns):
+        return "frontend_agent"
+
+    backend_patterns = (
+        "backend",
+        "nestjs",
+        "api",
+        "endpoint",
+        "auth",
+        "autenticacion",
+        "roles",
+        "permisos",
+        "keycloak",
+    )
+    if any(pattern in normalized for pattern in backend_patterns):
+        return "backend_agent"
+
+    rag_patterns = (
+        "documento",
+        "documentacion",
+        "manual",
+        "politica",
+        "arquitectura",
+        "sistema",
+    )
+    if any(pattern in normalized for pattern in rag_patterns):
+        return "rag_agent"
+
+    return None
+
+
+def _normalize(value: str) -> str:
+    without_accents = "".join(
+        character
+        for character in unicodedata.normalize("NFD", value.lower())
+        if unicodedata.category(character) != "Mn"
+    )
+    return re.sub(r"\s+", " ", without_accents).strip()

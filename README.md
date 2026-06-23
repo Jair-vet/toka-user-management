@@ -30,6 +30,8 @@ flowchart LR
     Role["Role :3003\nNestJS"]
     Audit["Audit :3004\nNestJS"]
     AI["AI Agent :8000\nFastAPI + LangGraph"]
+    LiteLLM["LiteLLM :4000\nLLM Gateway"]
+    Langfuse["Langfuse :3006\nLLM Observability"]
   end
 
   subgraph Data["Data Layer"]
@@ -42,7 +44,7 @@ flowchart LR
 
   subgraph Ext["External"]
     Keycloak["Keycloak\n:8080"]
-    OpenAI["OpenAI API"]
+    Providers["OpenAI / Ollama / Otros"]
   end
 
   Browser -->|HTTPS| Traefik
@@ -54,7 +56,10 @@ flowchart LR
   Audit -->|Mongoose| Mongo
   AI -->|vectors| Qdrant
   AI -->|metrics| Mongo
-  AI -->|LLM + Embed| OpenAI
+  AI -->|OpenAI-compatible| LiteLLM
+  LiteLLM -->|LLM + Embed| Providers
+  AI -->|traces| Langfuse
+  LiteLLM -->|usage/cost traces| Langfuse
   Auth & User & Role -->|publish events| MQ
   Audit & AI -->|subscribe events| MQ
   BFFSvc & Auth -->|"JWT blacklist / sessions"| Redis
@@ -74,6 +79,8 @@ flowchart LR
 | Vector DB | Qdrant |
 | Mensajería | RabbitMQ 3.13 |
 | AI Framework | LangGraph + LangChain |
+| LLM Gateway | LiteLLM |
+| LLM Observability | Langfuse |
 
 ---
 
@@ -91,17 +98,17 @@ flowchart LR
 cp .env.example docker/.env
 # Opcional: editar docker/.env con tus valores.
 # Si no existe docker/.env, Compose usa los defaults definidos en docker-compose.yml.
-# Para desarrollo gratuito local, usa Ollama:
-# AI_PROVIDER=ollama
-# OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-# LLM_MODEL=qwen2.5-coder:7b
-# EMBEDDING_MODEL=nomic-embed-text
+# Para desarrollo gratuito local, usa Ollama a través de LiteLLM:
+# AI_PROVIDER=litellm
+# OPENAI_BASE_URL=http://litellm:4000/v1
+# LLM_MODEL=toka-chat
+# EMBEDDING_MODEL=toka-embedding
 ```
 
-Antes de usar el asistente IA con Ollama, instala Ollama y descarga los modelos:
+Antes de usar el asistente IA con Ollama + LiteLLM, instala Ollama y descarga los modelos:
 
 ```bash
-ollama pull qwen2.5-coder:7b
+ollama pull qwen2.5:7b
 ollama pull nomic-embed-text
 ```
 
@@ -129,6 +136,15 @@ Servicios disponibles:
 - Keycloak Admin: http://localhost:8080 (admin/admin_secret_pass)
 - RabbitMQ Management: http://localhost:15672
 - Qdrant UI: http://localhost:6333/dashboard
+- LiteLLM Gateway: http://localhost:4000
+- Langfuse: http://localhost:3006 (admin@toka.local / toka_langfuse_admin)
+- Open WebUI opcional: http://localhost:3007
+
+Open WebUI se levanta solo como laboratorio interno:
+
+```bash
+docker compose -f docker/docker-compose.yml --profile ai-lab up -d open-webui
+```
 
 ### 3. Desarrollo local (hot reload)
 

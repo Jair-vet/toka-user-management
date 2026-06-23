@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .api.routes import chat, documents
+from .evaluation.metrics import ensure_metrics_indexes
 from .infrastructure.vector_store.qdrant_adapter import ensure_collection
 
 logging.basicConfig(
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
         logger.info("Qdrant collection initialized")
     except Exception as e:
         logger.warning(f"Could not initialize Qdrant collection: {e}")
+    await ensure_metrics_indexes()
     yield
     # Shutdown
     logger.info("Shutting down AI Agent Service")

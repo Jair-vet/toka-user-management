@@ -17,6 +17,7 @@ dependencies = [
     "langchain-ollama>=0.1.0",
     "langchain-community>=0.2.0,<0.3.0",
     "langgraph>=0.1.0",
+    "langfuse>=2.59.0,<3.0.0",
     "qdrant-client>=1.9.0",
     "motor>=3.4.0",
     "aio-pika>=9.4.0",

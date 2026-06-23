@@ -10,7 +10,24 @@ def _is_ollama() -> bool:
 def is_llm_configured() -> bool:
     if _is_ollama():
         return bool(settings.ollama_base_url)
+    if settings.ai_provider.lower() == "litellm":
+        return bool(settings.openai_base_url and settings.openai_api_key)
     return bool(settings.openai_api_key)
+
+
+def get_llm_metadata() -> dict[str, str | None]:
+    provider = settings.ai_provider.lower()
+    if provider == "ollama":
+        base_url = settings.ollama_base_url
+    else:
+        base_url = settings.openai_base_url
+
+    return {
+        "provider": provider,
+        "model": settings.llm_model,
+        "embedding_model": settings.embedding_model,
+        "base_url": base_url,
+    }
 
 
 def get_chat_model(max_tokens: int | None = None, temperature: float = 0):
