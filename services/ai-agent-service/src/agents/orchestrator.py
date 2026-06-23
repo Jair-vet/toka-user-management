@@ -17,6 +17,7 @@ When the supervisor outputs FINISH, the graph ends.
 """
 import logging
 import time
+import uuid
 from typing import Annotated, TypedDict
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
@@ -32,7 +33,8 @@ from .database_agent import database_agent_node
 from ..config import settings
 from ..evaluation.metrics import track_metrics
 from .auth_context import reset_access_token, set_access_token
-from ..infrastructure.llm.provider import is_llm_configured
+from ..infrastructure.llm.provider import get_llm_metadata, is_llm_configured
+from ..infrastructure.observability import finish_trace, start_trace, update_trace
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,12 @@ class AgentState(TypedDict):
     agent_outputs: dict
     supervisor_rounds: int
     supervisor_max_rounds: int
+    trace_id: str
+    agent_path: list[str]
+    routing_decisions: list[dict]
+    tool_calls: list[dict]
+    errors: list[dict]
+    model_metadata: dict
 
 
 def build_graph() -> StateGraph:
@@ -111,7 +119,21 @@ async def run_agent(
 ) -> dict:
     """Run the full multi-agent pipeline and return response + metrics."""
     start_time = time.time()
+    trace_id = str(uuid.uuid4())
     access_token_ctx = set_access_token(access_token)
+    model_metadata = get_llm_metadata()
+
+    start_trace(
+        trace_id=trace_id,
+        name="toka-ai-chat",
+        user_id=user_id,
+        session_id=session_id,
+        input_data={"message": message},
+        metadata={
+            "service": "ai-agent-service",
+            **model_metadata,
+        },
+    )
 
     try:
         if not is_llm_configured():
@@ -127,10 +149,22 @@ async def run_agent(
                 latency_ms=latency_ms,
                 metadata={"degraded": True, "reason": "missing_llm_provider"},
             )
+            update_trace(
+                trace_id=trace_id,
+                output={"answer": answer},
+                metadata={
+                    "degraded": True,
+                    "reason": "missing_llm_provider",
+                    "latency_ms": latency_ms,
+                    **model_metadata,
+                },
+                tags=["degraded", "missing-llm-provider"],
+            )
             return {
                 "answer": answer,
                 "intent": "degraded_no_llm_provider",
                 "latency_ms": latency_ms,
+                "trace_id": trace_id,
             }
 
         graph = get_graph()
@@ -141,11 +175,22 @@ async def run_agent(
             "context": [],
             "tool_results": [],
             "final_answer": "",
-            "metadata": {"user_id": user_id, "session_id": session_id},
+            "metadata": {
+                "user_id": user_id,
+                "session_id": session_id,
+                "trace_id": trace_id,
+                **model_metadata,
+            },
             "next_agent": "",
             "agent_outputs": {},
             "supervisor_rounds": 0,
             "supervisor_max_rounds": settings.supervisor_max_rounds,
+            "trace_id": trace_id,
+            "agent_path": [],
+            "routing_decisions": [],
+            "tool_calls": [],
+            "errors": [],
+            "model_metadata": model_metadata,
         }
 
         result = await graph.ainvoke(initial_state)
@@ -156,6 +201,10 @@ async def run_agent(
         # Derive intent from which agents were called
         agent_outputs: dict = result.get("agent_outputs", {})
         metadata: dict = result.get("metadata", {})
+        model_metadata = {
+            **model_metadata,
+            **result.get("model_metadata", {}),
+        }
         if metadata.get("ai_error"):
             intent = metadata["ai_error"]
         elif agent_outputs:
@@ -163,18 +212,42 @@ async def run_agent(
         else:
             intent = "unknown"
 
+        enriched_metadata = {
+            **metadata,
+            **model_metadata,
+            "trace_id": trace_id,
+            "agent_path": result.get("agent_path", []),
+            "routing_decisions": result.get("routing_decisions", []),
+            "tool_calls": result.get("tool_calls", []),
+            "errors": result.get("errors", []),
+            "agent_outputs": agent_outputs,
+            "supervisor_rounds": result.get("supervisor_rounds", 0),
+        }
+
         await track_metrics(
             user_id=user_id,
             session_id=session_id,
             intent=intent,
             latency_ms=latency_ms,
-            metadata=metadata,
+            metadata=enriched_metadata,
+        )
+
+        update_trace(
+            trace_id=trace_id,
+            output={"answer": final_answer, "intent": intent},
+            metadata={
+                **enriched_metadata,
+                "latency_ms": latency_ms,
+            },
+            tags=["ai-chat", intent],
         )
 
         return {
             "answer": final_answer,
             "intent": intent,
             "latency_ms": latency_ms,
+            "trace_id": trace_id,
         }
     finally:
+        finish_trace()
         reset_access_token(access_token_ctx)

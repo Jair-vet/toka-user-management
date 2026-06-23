@@ -1,0 +1,80 @@
+name: AI Agents CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ai-agents-ci.yml"
+      - ".env.example"
+      - "docker/**"
+      - "services/ai-agent-service/**"
+      - "frontend/src/pages/ChatPage.tsx"
+      - "frontend/src/api/endpoints.ts"
+      - "docs/**"
+  push:
+    branches:
+      - develop
+      - main
+      - "codex/**"
+    paths:
+      - ".github/workflows/ai-agents-ci.yml"
+      - ".env.example"
+      - "docker/**"
+      - "services/ai-agent-service/**"
+      - "frontend/src/pages/ChatPage.tsx"
+      - "frontend/src/api/endpoints.ts"
+      - "docs/**"
+
+jobs:
+  ai-agent-service:
+    name: AI agent service tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ai-agent-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/ai-agent-service/pyproject.toml
+
+      - name: Install service and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Compile Python sources
+        run: python -m compileall -q src
+
+      - name: Run AI agent tests
+        run: python -m pytest
+
+  ai-architecture-guard:
+    name: AI architecture guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate LangGraph and observability contracts
+        run: |
+          test -f services/ai-agent-service/src/agents/orchestrator.py
+          test -f services/ai-agent-service/src/agents/supervisor.py
+          test -f services/ai-agent-service/src/agents/trace_state.py
+          test -f services/ai-agent-service/src/infrastructure/observability/llm_observability.py
+          grep -q "StateGraph" services/ai-agent-service/src/agents/orchestrator.py
+          grep -q "supervisor_node" services/ai-agent-service/src/agents/supervisor.py
+          grep -q "supervisor_max_rounds" services/ai-agent-service/src/agents/supervisor.py
+          grep -q "agent_outputs" services/ai-agent-service/src/agents/supervisor.py
+          grep -q "track_metrics" services/ai-agent-service/src/agents/orchestrator.py
+          grep -q "start_trace" services/ai-agent-service/src/agents/orchestrator.py
+          grep -q "finish_trace" services/ai-agent-service/src/agents/orchestrator.py
+          grep -q "latencyMs" services/ai-agent-service/src/evaluation/metrics.py
+          grep -q "estimatedCostUsd" services/ai-agent-service/src/evaluation/metrics.py
+          grep -q "toka-chat" docker/litellm/config.yaml
+          grep -q "toka-embedding" docker/litellm/config.yaml
+
+      - name: Validate Docker Compose config
+        run: docker compose -f docker/docker-compose.yml config --quiet

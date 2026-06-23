@@ -120,6 +120,7 @@ export interface ChatMessage {
   sessionId?: string;
   intent?: string;
   latencyMs?: number;
+  traceId?: string;
 }
 
 export interface ChatRequest {
@@ -132,6 +133,7 @@ export interface ChatResponse {
   session_id: string;
   intent: string;
   latency_ms: number;
+  trace_id?: string;
 }
 
 export const aiApi = {

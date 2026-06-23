@@ -8,6 +8,7 @@ interface Message {
   content: string;
   intent?: string;
   latencyMs?: number;
+  traceId?: string;
   timestamp: Date;
 }
 
@@ -97,6 +98,7 @@ export function ChatPage() {
               session_id?: string;
               intent?: string;
               latency_ms?: number;
+              trace_id?: string;
               error?: string;
             };
             if (parsed.error) throw new Error(parsed.error);
@@ -114,7 +116,12 @@ export function ChatPage() {
               setMessages((msgs) =>
                 msgs.map((m) =>
                   m.id === assistantMsgId
-                    ? { ...m, intent: parsed.intent, latencyMs: parsed.latency_ms }
+                    ? {
+                        ...m,
+                        intent: parsed.intent,
+                        latencyMs: parsed.latency_ms,
+                        traceId: parsed.trace_id,
+                      }
                     : m,
                 ),
               );
@@ -194,6 +201,9 @@ export function ChatPage() {
                   <span className="badge badge-gray">{msg.intent}</span>
                   {msg.latencyMs && (
                     <span className="badge badge-gray">{msg.latencyMs}ms</span>
+                  )}
+                  {msg.traceId && (
+                    <span className="badge badge-gray">trace {msg.traceId.slice(0, 8)}</span>
                   )}
                 </div>
               )}

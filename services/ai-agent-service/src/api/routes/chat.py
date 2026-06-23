@@ -20,6 +20,7 @@ class ChatResponse(BaseModel):
     session_id: str
     intent: str
     latency_ms: int
+    trace_id: str | None = None
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -43,6 +44,7 @@ async def chat(
             session_id=session_id,
             intent=result["intent"],
             latency_ms=result["latency_ms"],
+            trace_id=result.get("trace_id"),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
@@ -81,6 +83,7 @@ async def chat_stream(
                 "session_id": session_id,
                 "intent": result["intent"],
                 "latency_ms": result["latency_ms"],
+                "trace_id": result.get("trace_id"),
             })
             yield f"data: {done_data}\n\n"
         except Exception as e:

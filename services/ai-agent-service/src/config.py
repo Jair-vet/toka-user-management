@@ -30,10 +30,16 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 50
     rag_top_k: int = 5
-    max_tokens: int = 2000
+    max_tokens: int = 600
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost", "http://localhost:5173"]
     supervisor_max_rounds: int = 3
+    langfuse_enabled: bool = False
+    langfuse_host: str = "http://localhost:3006"
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    llm_trace_prompts: bool = False
+    llm_redact_pii: bool = True
 
 
 settings = Settings()

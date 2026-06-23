@@ -47,6 +47,22 @@ def test_supervisor_returns_single_output_as_final():
 
     result = supervisor_node(state)
     assert result["final_answer"] == "The answer is 42."
+    assert result["next_agent"] == "FINISH"
+
+
+def test_supervisor_finishes_immediately_when_agent_output_exists():
+    """The graph should not loop after a worker has produced an answer."""
+    from src.agents.supervisor import supervisor_node
+
+    state = _make_state(
+        supervisor_rounds=1,
+        agent_outputs={"admin_assistant": "Estas son mis capacidades."},
+    )
+
+    result = supervisor_node(state)
+    assert result["next_agent"] == "FINISH"
+    assert result["final_answer"] == "Estas son mis capacidades."
+    assert result["supervisor_rounds"] == 1
 
 
 def test_route_supervisor_returns_next_agent():
@@ -76,11 +92,48 @@ async def test_supervisor_calls_llm_for_routing():
         mock_llm.invoke = MagicMock(return_value=mock_response)
         get_chat_model.return_value = mock_llm
 
-        state = _make_state(supervisor_rounds=0, agent_outputs={})
+        state = _make_state(
+            messages=[HumanMessage(content="Classify this ambiguous request")],
+            supervisor_rounds=0,
+            agent_outputs={},
+        )
         result = supervisor_node(state)
 
         assert result["next_agent"] == "rag_agent"
         assert result["supervisor_rounds"] == 1
+
+
+def test_supervisor_routes_help_without_llm():
+    """Common help questions should route without paying LLM latency."""
+    from src.agents.supervisor import supervisor_node
+
+    with patch("src.agents.supervisor.get_chat_model") as get_chat_model:
+        state = _make_state(messages=[HumanMessage(content="Que puedes hacer dentro de Toka?")])
+        result = supervisor_node(state)
+
+        get_chat_model.assert_not_called()
+        assert result["next_agent"] == "admin_assistant"
+        assert result["supervisor_rounds"] == 1
+
+
+@pytest.mark.asyncio
+async def test_supervisor_routes_finish_without_outputs_to_admin_assistant():
+    """A greeting/help request should not finish with empty synthesis."""
+    from src.agents.supervisor import supervisor_node
+
+    mock_response = MagicMock()
+    mock_response.content = '{"next_agent": "FINISH", "reasoning": "general help request"}'
+
+    with patch("src.agents.supervisor.get_chat_model") as get_chat_model:
+        mock_llm = MagicMock()
+        mock_llm.invoke = MagicMock(return_value=mock_response)
+        get_chat_model.return_value = mock_llm
+
+        state = _make_state(messages=[HumanMessage(content="hola que podemos hacer?")])
+        result = supervisor_node(state)
+
+        assert result["next_agent"] == "admin_assistant"
+        assert result["final_answer"] == ""
 
 
 @pytest.mark.asyncio
@@ -97,6 +150,7 @@ async def test_run_agent_returns_required_keys():
     with (
         patch("src.agents.orchestrator.build_graph") as mock_build,
         patch("src.agents.orchestrator.track_metrics") as mock_track,
+        patch("src.agents.orchestrator.is_llm_configured", return_value=True),
     ):
         from unittest.mock import AsyncMock
         mock_graph = MagicMock()

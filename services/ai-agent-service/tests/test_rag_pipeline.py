@@ -8,6 +8,7 @@ async def test_ingest_document_calls_embed_and_upsert():
     with (
         patch("src.rag.pipeline.chunk_text", return_value=["chunk1", "chunk2"]),
         patch("src.rag.pipeline.ensure_collection", new_callable=AsyncMock),
+        patch("src.rag.pipeline.is_llm_configured", return_value=True),
         patch("src.rag.pipeline.embed_texts", new_callable=AsyncMock) as mock_embed,
         patch("src.rag.pipeline.upsert_vectors", new_callable=AsyncMock) as mock_upsert,
     ):
@@ -32,6 +33,7 @@ async def test_retrieve_context_returns_vector_payloads():
     with (
         patch("src.rag.pipeline.embed_query", new_callable=AsyncMock) as mock_embed_q,
         patch("src.rag.pipeline.search", new_callable=AsyncMock) as mock_search,
+        patch("src.rag.pipeline.is_llm_configured", return_value=True),
     ):
         mock_embed_q.return_value = [0.1] * 1536
         mock_search.return_value = mock_results
